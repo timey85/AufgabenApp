@@ -7,20 +7,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 18
+
+      - run: npm install -g expo-cli
 
       - run: npm install
 
-      - name: Build APK
-        run: |
-          cd android || exit 1
-          chmod +x gradlew
-          ./gradlew assembleRelease
+      - run: npx expo prebuild
+
+      - run: cd android && ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
