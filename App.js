@@ -4,7 +4,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, FlatList } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Swipeable } from 'react-native-gesture-handler';
 
 export default function App() {
   const [tasks, setTasks] = useState([]);
