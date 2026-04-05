@@ -15,6 +15,11 @@
     },
     "ios": {
       "bundleIdentifier": "com.aufgaben.app"
+    },
+    "splash": {
+      "backgroundColor": "#ffffff",
+      "resizeMode": "contain",
+      "image": "./assets/splash.png"
     }
   }
 }
