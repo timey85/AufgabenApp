@@ -1,7 +1,7 @@
 {
   "name": "aufgaben",
   "version": "1.0.0",
-  "main": "App.js",
+  "main": "index.js",
   "dependencies": {
     "expo": "^50.0.0",
     "react": "18.2.0",
