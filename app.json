@@ -4,14 +4,17 @@
     "slug": "aufgaben",
     "version": "1.0.0",
     "orientation": "portrait",
-    "platforms": ["android"],
     "icon": "./icon.png",
+    "platforms": ["android"],
     "android": {
       "package": "com.aufgaben.app",
       "adaptiveIcon": {
         "foregroundImage": "./icon.png",
         "backgroundColor": "#ffffff"
       }
+    },
+    "ios": {
+      "bundleIdentifier": "com.aufgaben.app"
     }
   }
 }
