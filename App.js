@@ -1,6 +1,7 @@
 // Verbesserte React Native Aufgaben-App
 // Features: Swipe to delete, nur "nach oben" priorisieren, lokale Speicherung
 
+import { Swipeable } from 'react-native-gesture-handler';
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, FlatList } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,8 +14,12 @@ export default function App() {
   useEffect(() => { saveTasks(); }, [tasks]);
 
   const loadTasks = async () => {
-    const data = await AsyncStorage.getItem("TASKS");
-    if (data) setTasks(JSON.parse(data));
+    try {
+      const data = await AsyncStorage.getItem("TASKS");
+      if (data) setTasks(JSON.parse(data));
+    } catch (e) {
+      console.log(e);
+    }
   };
 
   const saveTasks = async () => {
