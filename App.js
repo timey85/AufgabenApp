@@ -1,8 +1,10 @@
-// Verbesserte React Native Aufgaben App mit:
+// React Native Aufgaben App
+// Features:
 // ✅ Drag & Drop
-// ✅ Kategorien / Priorität
-// ✅ Löschen Button
-// ✅ Schöne UI (Cards)
+// ✅ Prioritäten
+// ✅ Löschen nur wenn erledigt
+// ✅ Pfeil zum Verschieben
+// ✅ Verbesserte UI
 
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
@@ -48,6 +50,13 @@ export default function App() {
     setTasks(tasks.filter(t => t.id !== id));
   };
 
+  const moveUp = (index) => {
+    if (index === 0) return;
+    const newTasks = [...tasks];
+    [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+    setTasks(newTasks);
+  };
+
   const getColor = (priority) => {
     switch (priority) {
       case 'high': return '#ff6b6b';
@@ -56,7 +65,7 @@ export default function App() {
     }
   };
 
-  const renderItem = ({ item, drag, isActive }) => (
+  const renderItem = ({ item, drag, isActive, index }) => (
     <TouchableOpacity
       onLongPress={drag}
       style={[
@@ -72,9 +81,17 @@ export default function App() {
         {item.text}
       </Text>
 
-      <TouchableOpacity onPress={() => deleteTask(item.id)}>
-        <Text style={styles.delete}>🗑️</Text>
+      {/* Pfeil zum Verschieben */}
+      <TouchableOpacity onPress={() => moveUp(index)}>
+        <Text style={styles.arrow}>↑</Text>
       </TouchableOpacity>
+
+      {/* Löschen nur wenn erledigt */}
+      {item.done && (
+        <TouchableOpacity onPress={() => deleteTask(item.id)}>
+          <Text style={styles.delete}>🗑️</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 
@@ -95,23 +112,27 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.priorityRow}>
-        <TouchableOpacity onPress={() => setPriority('low')}>
-          <Text>🟢</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setPriority('normal')}>
-          <Text>🔵</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setPriority('high')}>
-          <Text>🔴</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Priorität nur anzeigen wenn Text eingegeben wurde */}
+      {text.length > 0 && (
+        <View style={styles.priorityRow}>
+          <TouchableOpacity onPress={() => setPriority('low')}>
+            <Text style={styles.priorityBtn}>🟢</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setPriority('normal')}>
+            <Text style={styles.priorityBtn}>🔵</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setPriority('high')}>
+            <Text style={styles.priorityBtn}>🔴</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <DraggableFlatList
         data={tasks}
         keyExtractor={(item) => item.id}
         onDragEnd={({ data }) => setTasks(data)}
         renderItem={renderItem}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
     </View>
   );
@@ -136,7 +157,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderRadius: 10,
-    padding: 10,
+    padding: 8,
     backgroundColor: 'white'
   },
   add: {
@@ -148,17 +169,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 10
   },
+  priorityBtn: {
+    fontSize: 28
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
+    padding: 10,
     borderRadius: 15,
-    marginBottom: 10
+    marginBottom: 8
   },
   text: {
     flex: 1,
     marginLeft: 10,
-    fontSize: 16,
+    fontSize: 14,
     color: 'white'
   },
   done: {
@@ -169,8 +193,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white'
   },
+  arrow: {
+    fontSize: 18,
+    marginHorizontal: 5,
+    color: 'white'
+  },
   delete: {
-    fontSize: 18
+    fontSize: 18,
+    marginLeft: 5
   }
 });
-
