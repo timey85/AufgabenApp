@@ -1,11 +1,9 @@
 {
-  "name": "Aufgaben",
+  "name": "aufgaben",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "android": "react-native run-android"
-  },
+  "main": "App.js",
   "dependencies": {
+    "expo": "^50.0.0",
     "react": "18.2.0",
     "react-native": "0.73.0",
     "@react-native-async-storage/async-storage": "^1.19.0",
