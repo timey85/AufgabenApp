@@ -191,7 +191,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 12,
-    elevation: 2
+    paddingTop: 8,
+    paddingBottom: 8,
+    elevation: 2,
+    marginBottom: 5
   },
   priorityRow: {
     flexDirection: 'row',
@@ -206,9 +209,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'white',
     marginHorizontal: 15,
-    marginVertical: 6,
-    padding: 15,
-    borderRadius: 12,
+    marginVertical: 3,
+    padding: 10,
+    paddingTop: 4,
+    paddingBottom: 4,
+    borderRadius: 9,
     borderLeftWidth: 6,
     elevation: 3
   },
@@ -237,8 +242,8 @@ const styles = StyleSheet.create({
     bottom: 25,
     right: 25,
     backgroundColor: '#4d96ff',
-    width: 60,
-    height: 60,
+    width: 45,
+    height: 45,
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
