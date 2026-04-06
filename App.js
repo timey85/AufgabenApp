@@ -1,22 +1,32 @@
-// React Native modern Material-Style Aufgaben App
-// Features:
-// ✅ Drag & Drop
-// ✅ Prioritäten
-// ✅ Löschen nur wenn erledigt
-// ✅ Pfeil zum Verschieben
-// ✅ Verbesserte UI
-
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
+import {
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, FlatList, useColorScheme
+} from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function App() {
+
+  const isDark = useColorScheme() === "dark";
+
+  const bg = isDark ? '#4d4c4c' : '#f5f7fa';
+  const cardBg = isDark ? '#3a3a3a' : 'white';
+  const textColor = isDark ? 'white' : 'black';
+
   const [tasks, setTasks] = useState([]);
   const [text, setText] = useState("");
   const [priority, setPriority] = useState("normal");
-  const [tab, setTab] = useState("alle");
+  const [category, setCategory] = useState("");
+  const [dueDate, setDueDate] = useState(null);
+  const [showPicker, setShowPicker] = useState(false);
 
-  useEffect(() => { loadTasks(); }, []);
+  useEffect(() => {
+    loadTasks();
+    Notifications.requestPermissionsAsync();
+  }, []);
+
   useEffect(() => { saveTasks(); }, [tasks]);
 
   const loadTasks = async () => {
@@ -28,22 +38,42 @@ export default function App() {
     await AsyncStorage.setItem("TASKS", JSON.stringify(tasks));
   };
 
-  const addTask = () => {
+  const formatDate = (date) => {
+    return date.toLocaleDateString("de-DE");
+  };
+
+  const scheduleNotification = async (date, text) => {
+    await Notifications.scheduleNotificationAsync({
+      content: { title: "Aufgabe fällig", body: text },
+      trigger: date
+    });
+  };
+
+  const addTask = async () => {
     if (!text) return;
-    setTasks([
-      ...tasks,
-      {
-        id: Date.now().toString(),
-        text,
-        done: false,
-        priority
-      }
-    ]);
+
+    const newTask = {
+      id: Date.now().toString(),
+      text,
+      done: false,
+      priority,
+      category,
+      dueDate: dueDate ? formatDate(dueDate) : null
+    };
+
+    setTasks([...tasks, newTask]);
+
+    if (dueDate) await scheduleNotification(dueDate, text);
+
     setText("");
+    setCategory("");
+    setDueDate(null);
   };
 
   const toggleTask = (id) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    setTasks(tasks.map(t =>
+      t.id === id ? { ...t, done: !t.done } : t
+    ));
   };
 
   const deleteTask = (id) => {
@@ -53,16 +83,13 @@ export default function App() {
   const moveUp = (id) => {
     const index = tasks.findIndex(t => t.id === id);
     if (index <= 0) return;
+
     const newTasks = [...tasks];
-    [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+    [newTasks[index - 1], newTasks[index]] =
+      [newTasks[index], newTasks[index - 1]];
+
     setTasks(newTasks);
   };
-
-  const filteredTasks = tasks.filter(t => {
-    if (tab === "offen") return !t.done;
-    if (tab === "erledigt") return t.done;
-    return true;
-  });
 
   const getColor = (priority) => {
     switch (priority) {
@@ -72,54 +99,78 @@ export default function App() {
     }
   };
 
-  const renderItem = ({ item, index }) => (
-    <View style={[styles.card, { borderLeftColor: getColor(item.priority) }]}>      
+  // 📂 Kategorien sammeln
+  const uniqueCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))];
+
+  const groupedTasks = () => {
+    const groups = {};
+
+    tasks.forEach(task => {
+      const key = task.category || "Ohne Kategorie";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(task);
+    });
+
+    return Object.entries(groups);
+  };
+
+  const renderItem = ({ item }) => (
+    <View style={[
+      styles.card,
+      {
+        backgroundColor: cardBg,
+        borderLeftColor: getColor(item.priority)
+      }
+    ]}>
+
       <TouchableOpacity onPress={() => toggleTask(item.id)}>
-        <Text style={styles.checkbox}>{item.done ? "☑" : "☐"}</Text>
+        <Text style={{ color: textColor }}>
+          {item.done ? "☑" : "☐"}
+        </Text>
       </TouchableOpacity>
 
-      <Text style={[styles.text, item.done && styles.done]}>
+      <Text style={[
+        styles.text,
+        item.done && styles.done,
+        { color: textColor }
+      ]}>
         {item.text}
       </Text>
 
+      {item.dueDate && (
+        <Text style={{ fontSize: 12, marginRight: 6, color: textColor }}>
+          {item.dueDate}
+        </Text>
+      )}
+
       <TouchableOpacity onPress={() => moveUp(item.id)}>
-        <Text style={styles.arrow}>⬆</Text>
+        <Text style={{ color: textColor }}>⬆</Text>
       </TouchableOpacity>
 
       {item.done && (
         <TouchableOpacity onPress={() => deleteTask(item.id)}>
-          <Text style={styles.delete}>🗑️</Text>
+          <Text style={{ marginLeft: 6 }}>🗑️</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: bg }]}>
 
-      {/* Header */}
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>Aufgaben</Text>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {['alle', 'offen', 'erledigt'].map(t => (
-          <TouchableOpacity key={t} onPress={() => setTab(t)}>
-            <Text style={[styles.tab, tab === t && styles.activeTab]}>
-              {t.toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Input */}
+      {/* INPUT */}
       <View style={styles.inputRow}>
         <TextInput
           value={text}
           onChangeText={setText}
           placeholder="Neue Aufgabe"
-          style={styles.input}
+          placeholderTextColor="#aaa"
+          style={[styles.input, { backgroundColor: cardBg, color: textColor }]}
         />
 
         <TouchableOpacity style={styles.addBtn} onPress={addTask}>
@@ -127,26 +178,75 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Priority */}
+      {/* KATEGORIE */}
       {text.length > 0 && (
-        <View style={styles.priorityRow}>
+        <>
+          <TextInput
+            value={category}
+            onChangeText={setCategory}
+            placeholder="Kategorie"
+            style={[styles.input, { backgroundColor: cardBg, color: textColor }]}
+          />
+
+          {/* Dropdown */}
+          <View style={styles.dropdown}>
+            {uniqueCategories.map(cat => (
+              <TouchableOpacity key={cat} onPress={() => setCategory(cat)}>
+                <Text style={{ color: textColor }}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
+
+      {/* BUTTONS */}
+      {text.length > 0 && (
+        <View style={styles.row}>
           <TouchableOpacity onPress={() => setPriority('low')}>
-            <Text style={styles.priorityBtn}>🟢</Text>
+            <Text style={styles.btn}>🟢</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setPriority('normal')}>
-            <Text style={styles.priorityBtn}>🔵</Text>
+            <Text style={styles.btn}>🔵</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setPriority('high')}>
-            <Text style={styles.priorityBtn}>🔴</Text>
+            <Text style={styles.btn}>🔴</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setShowPicker(true)}>
+            <Text style={styles.btn}>📅</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* List */}
+      {/* DATE PICKER */}
+      {showPicker && (
+        <DateTimePicker
+          value={dueDate || new Date()}
+          mode="date"
+          onChange={(e, d) => {
+            setShowPicker(false);
+            if (d) setDueDate(d);
+          }}
+        />
+      )}
+
+      {/* LISTE */}
       <FlatList
-        data={filteredTasks}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
+        data={groupedTasks()}
+        keyExtractor={(item) => item[0]}
+        renderItem={({ item }) => (
+          <View>
+            <Text style={[styles.categoryTitle, { color: textColor }]}>
+              {item[0]}
+            </Text>
+
+            {item[1].map(task => (
+              <View key={task.id}>
+                {renderItem({ item: task })}
+              </View>
+            ))}
+          </View>
+        )}
         contentContainerStyle={{ paddingBottom: 120 }}
       />
 
@@ -155,103 +255,87 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f7fa'
-  },
+  container: { flex: 1 },
+
   header: {
+    backgroundColor: '#4d96ff',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     height: '40px',
-    backgroundColor: '#4d96ff',
     borderBottomLeftRadius: 13,
     borderBottomRightRadius: 13
   },
+
   title: {
     color: 'white',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold'
   },
-  tabs: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 10
-  },
-  tab: {
-    fontSize: 14,
-    color: '#888'
-  },
-  activeTab: {
-    color: '#4d96ff',
-    fontWeight: 'bold'
-  },
+
   inputRow: {
     flexDirection: 'row',
-    paddingHorizontal: 15,
+    padding: 10,
     alignItems: 'center'
   },
+
   input: {
     flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
-    elevation: 2,
-    marginBottom: 8
+    borderRadius: 10,
+    padding: 10,
+    marginVertical: 5
   },
+
   addBtn: {
     marginLeft: 10,
     backgroundColor: '#4d96ff',
     borderRadius: 30,
-    paddingHorizontal: 8,
-    paddingVertical: 4
+    paddingHorizontal: 10,
+    paddingVertical: 6
   },
+
   addText: {
     color: 'white',
-    fontSize: 20,
+    fontSize: 20
+  },
+
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'center'
+  },
+
+  btn: {
+    fontSize: 26,
+    marginHorizontal: 8
+  },
+
+  dropdown: {
+    paddingHorizontal: 10
+  },
+
+  categoryTitle: {
+    marginTop: 10,
+    marginLeft: 10,
     fontWeight: 'bold'
   },
-  priorityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 10
-  },
-  priorityBtn: {
-    fontSize: 28
-  },
+
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    marginHorizontal: 15,
+    marginHorizontal: 10,
     marginVertical: 3,
-    padding: 10,
-    paddingTop: 4,
-    paddingBottom: 4,
-    borderRadius: 9,
-    borderLeftWidth: 6,
-    elevation: 3
+    padding: 8,
+    borderRadius: 10,
+    borderLeftWidth: 5
   },
+
   text: {
     flex: 1,
-    marginLeft: 10,
-    fontSize: 16
+    marginLeft: 10
   },
+
   done: {
     textDecorationLine: 'line-through',
     opacity: 0.5
-  },
-  checkbox: {
-    fontSize: 18
-  },
-  arrow: {
-    fontSize: 18,
-    marginHorizontal: 8
-  },
-  delete: {
-    fontSize: 18,
-    marginLeft: 8
   }
 });
