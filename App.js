@@ -215,7 +215,11 @@ export default function App() {
             <View style={styles.dropdown}>
               {uniqueCategories.map(cat => (
                 <TouchableOpacity key={cat} onPress={() => setCategory(cat)}>
-                  <Text style={[styles.dropdownInput, { backgroundColor: cardBg, color: textColor }]}>{cat}</Text>
+                  <View style={[styles.dropdownItem, { backgroundColor: cardBg }]}>
+                    <Text style={[styles.dropdownText, { color: textColor }]}>
+                      {cat}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -322,22 +326,22 @@ const styles = StyleSheet.create({
   },
 
   dropdown: {
-    marginHorizontal: 15,
+    marginHorizontal: 10,
     borderRadius: 12,
-    padding: 5,
-    marginTop: 5,
-    elevation: 2
+    marginTop: 3,
+    elevation: 3,
+    overflow: 'hidden'
   },
 
-  dropdownInput: {
-    flex: 1,
-    borderRadius: 6,
-    height: 40,
+  dropdownItem: {
+    backgroundColor: 'transparent',
+    paddingVertical: 4,
     paddingHorizontal: 12,
-    padding: 2,
-    textAlignVertical: 'center',
-    marginRight: 8,
-    fontSize: 13
+    borderRadius: 1
+  },
+
+  dropdownText: {
+    fontSize: 14,
   },
 
   categoryTitle: {
