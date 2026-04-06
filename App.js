@@ -83,7 +83,7 @@ export default function App() {
       </Text>
 
       <TouchableOpacity onPress={() => moveUp(item.id)}>
-        <Text style={styles.arrow}>↑</Text>
+        <Text style={styles.arrow}>⬆</Text>
       </TouchableOpacity>
 
       {item.done && (
@@ -121,6 +121,10 @@ export default function App() {
           placeholder="Neue Aufgabe"
           style={styles.input}
         />
+
+        <TouchableOpacity style={styles.addBtn} onPress={addTask}>
+          <Text style={styles.addText}>＋</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Priority */}
@@ -146,11 +150,6 @@ export default function App() {
         contentContainerStyle={{ paddingBottom: 120 }}
       />
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={addTask}>
-        <Text style={styles.fabText}>＋</Text>
-      </TouchableOpacity>
-
     </View>
   );
 }
@@ -158,13 +157,16 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#eef1f5'
+    backgroundColor: '#f5f7fa'
   },
   header: {
-    padding: 20,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '40px',
     backgroundColor: '#4d96ff',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20
+    borderBottomLeftRadius: 13,
+    borderBottomRightRadius: 13
   },
   title: {
     color: 'white',
@@ -185,16 +187,31 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   inputRow: {
-    paddingHorizontal: 15
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    alignItems: 'center'
   },
   input: {
+    flex: 1,
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 12,
     paddingTop: 8,
     paddingBottom: 8,
     elevation: 2,
-    marginBottom: 5
+    marginBottom: 8
+  },
+  addBtn: {
+    marginLeft: 10,
+    backgroundColor: '#4d96ff',
+    borderRadius: 30,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  addText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold'
   },
   priorityRow: {
     flexDirection: 'row',
@@ -236,21 +253,5 @@ const styles = StyleSheet.create({
   delete: {
     fontSize: 18,
     marginLeft: 8
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 25,
-    right: 25,
-    backgroundColor: '#4d96ff',
-    width: 45,
-    height: 45,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 5
-  },
-  fabText: {
-    color: 'white',
-    fontSize: 30
   }
 });
