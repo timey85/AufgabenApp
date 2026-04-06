@@ -106,7 +106,7 @@ export default function App() {
     const groups = {};
 
     tasks.forEach(task => {
-      const key = task.category || "Ohne Kategorie";
+      const key = task.category || "";
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     });
@@ -124,7 +124,7 @@ export default function App() {
     ]}>
 
       <TouchableOpacity onPress={() => toggleTask(item.id)}>
-        <Text style={{ color: textColor }}>
+        <Text style={[styles.cardIcon, { color: textColor }]}>
           {item.done ? "☑" : "☐"}
         </Text>
       </TouchableOpacity>
@@ -144,12 +144,12 @@ export default function App() {
       )}
 
       <TouchableOpacity onPress={() => moveUp(item.id)}>
-        <Text style={{ color: textColor }}>⬆</Text>
+        <Text style={[styles.cardIcon, { color: textColor }]}>⬆</Text>
       </TouchableOpacity>
 
       {item.done && (
         <TouchableOpacity onPress={() => deleteTask(item.id)}>
-          <Text style={{ marginLeft: 6 }}>🗑️</Text>
+          <Text style={[styles.cardIcon, { marginLeft: 2 }]}>🗑️</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -181,41 +181,46 @@ export default function App() {
       {/* KATEGORIE */}
       {text.length > 0 && (
         <>
-          <TextInput
-            value={category}
-            onChangeText={setCategory}
-            placeholder="Kategorie"
-            style={[styles.input, { backgroundColor: cardBg, color: textColor }]}
-          />
+          <View style={styles.categoryRow}>
+            <TextInput
+              value={category}
+              onChangeText={setCategory}
+              placeholder="Kategorie"
+              placeholderTextColor="#aaa"
+              style={[styles.categoryInput, { backgroundColor: cardBg, color: textColor }]}
+            />
+
+            {/* Farben */}
+            <TouchableOpacity onPress={() => setPriority('low')}>
+              <Text style={styles.icon}>🟢</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setPriority('normal')}>
+              <Text style={styles.icon}>🔵</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setPriority('high')}>
+              <Text style={styles.icon}>🔴</Text>
+            </TouchableOpacity>
+
+            {/* Kalender */}
+            <TouchableOpacity onPress={() => setShowPicker(true)}>
+              <Text style={styles.icon}>📅</Text>
+            </TouchableOpacity>
+            
+          </View>
 
           {/* Dropdown */}
-          <View style={styles.dropdown}>
-            {uniqueCategories.map(cat => (
-              <TouchableOpacity key={cat} onPress={() => setCategory(cat)}>
-                <Text style={{ color: textColor }}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {uniqueCategories.length > 0 && (
+            <View style={styles.dropdown}>
+              {uniqueCategories.map(cat => (
+                <TouchableOpacity key={cat} onPress={() => setCategory(cat)}>
+                  <Text style={[styles.dropdownInput, { backgroundColor: cardBg, color: textColor }]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </>
-      )}
-
-      {/* BUTTONS */}
-      {text.length > 0 && (
-        <View style={styles.row}>
-          <TouchableOpacity onPress={() => setPriority('low')}>
-            <Text style={styles.btn}>🟢</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setPriority('normal')}>
-            <Text style={styles.btn}>🔵</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setPriority('high')}>
-            <Text style={styles.btn}>🔴</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setShowPicker(true)}>
-            <Text style={styles.btn}>📅</Text>
-          </TouchableOpacity>
-        </View>
       )}
 
       {/* DATE PICKER */}
@@ -281,9 +286,26 @@ const styles = StyleSheet.create({
 
   input: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 10,
-    marginVertical: 5
+    marginVertical: 5,
+    height: 35
+  },
+
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    marginTop: 2
+  },
+
+  categoryInput: {
+    flex: 1,
+    borderRadius: 12,
+    height: 35,
+    paddingHorizontal: 12,
+    textAlignVertical: 'center',
+    marginRight: 8
   },
 
   addBtn: {
@@ -299,24 +321,39 @@ const styles = StyleSheet.create({
     fontSize: 20
   },
 
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'center'
-  },
-
-  btn: {
-    fontSize: 26,
-    marginHorizontal: 8
-  },
-
   dropdown: {
-    paddingHorizontal: 10
+    marginHorizontal: 15,
+    borderRadius: 12,
+    padding: 5,
+    marginTop: 5,
+    elevation: 2
+  },
+
+  dropdownInput: {
+    flex: 1,
+    borderRadius: 6,
+    height: 40,
+    paddingHorizontal: 12,
+    padding: 2,
+    textAlignVertical: 'center',
+    marginRight: 8,
+    fontSize: 13
   },
 
   categoryTitle: {
     marginTop: 10,
-    marginLeft: 10,
-    fontWeight: 'bold'
+    marginLeft: 20,
+    fontWeight: 'bold',
+    fontSize: 17
+  },
+
+  icon: {
+    fontSize: 22,
+    marginHorizontal: 4
+  },
+  cardIcon: {
+    fontSize: 20,
+    marginHorizontal: 4
   },
 
   card: {
@@ -324,14 +361,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 10,
     marginVertical: 3,
-    padding: 8,
-    borderRadius: 10,
-    borderLeftWidth: 5
+    padding: 1,
+    paddingLeft: 5,
+    paddingRight: 5,
+    borderRadius: 8,
+    borderLeftWidth: 6
   },
 
   text: {
     flex: 1,
-    marginLeft: 10
+    marginLeft: 7,
+    fontSize: 15
   },
 
   done: {
