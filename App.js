@@ -1,4 +1,4 @@
-// React Native Aufgaben App
+// React Native modern Material-Style Aufgaben App
 // Features:
 // ✅ Drag & Drop
 // ✅ Prioritäten
@@ -7,14 +7,14 @@
 // ✅ Verbesserte UI
 
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DraggableFlatList from 'react-native-draggable-flatlist';
 
 export default function App() {
   const [tasks, setTasks] = useState([]);
   const [text, setText] = useState("");
   const [priority, setPriority] = useState("normal");
+  const [tab, setTab] = useState("alle");
 
   useEffect(() => { loadTasks(); }, []);
   useEffect(() => { saveTasks(); }, [tasks]);
@@ -50,12 +50,19 @@ export default function App() {
     setTasks(tasks.filter(t => t.id !== id));
   };
 
-  const moveUp = (index) => {
-    if (index === 0) return;
+  const moveUp = (id) => {
+    const index = tasks.findIndex(t => t.id === id);
+    if (index <= 0) return;
     const newTasks = [...tasks];
     [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
     setTasks(newTasks);
   };
+
+  const filteredTasks = tasks.filter(t => {
+    if (tab === "offen") return !t.done;
+    if (tab === "erledigt") return t.done;
+    return true;
+  });
 
   const getColor = (priority) => {
     switch (priority) {
@@ -65,14 +72,8 @@ export default function App() {
     }
   };
 
-  const renderItem = ({ item, drag, isActive, index }) => (
-    <TouchableOpacity
-      onLongPress={drag}
-      style={[
-        styles.card,
-        { backgroundColor: getColor(item.priority), opacity: isActive ? 0.8 : 1 }
-      ]}
-    >
+  const renderItem = ({ item, index }) => (
+    <View style={[styles.card, { borderLeftColor: getColor(item.priority) }]}>      
       <TouchableOpacity onPress={() => toggleTask(item.id)}>
         <Text style={styles.checkbox}>{item.done ? "☑" : "☐"}</Text>
       </TouchableOpacity>
@@ -81,24 +82,38 @@ export default function App() {
         {item.text}
       </Text>
 
-      {/* Pfeil zum Verschieben */}
-      <TouchableOpacity onPress={() => moveUp(index)}>
+      <TouchableOpacity onPress={() => moveUp(item.id)}>
         <Text style={styles.arrow}>↑</Text>
       </TouchableOpacity>
 
-      {/* Löschen nur wenn erledigt */}
       {item.done && (
         <TouchableOpacity onPress={() => deleteTask(item.id)}>
           <Text style={styles.delete}>🗑️</Text>
         </TouchableOpacity>
       )}
-    </TouchableOpacity>
+    </View>
   );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Meine Aufgaben</Text>
 
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Aufgaben</Text>
+      </View>
+
+      {/* Tabs */}
+      <View style={styles.tabs}>
+        {['alle', 'offen', 'erledigt'].map(t => (
+          <TouchableOpacity key={t} onPress={() => setTab(t)}>
+            <Text style={[styles.tab, tab === t && styles.activeTab]}>
+              {t.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Input */}
       <View style={styles.inputRow}>
         <TextInput
           value={text}
@@ -106,13 +121,9 @@ export default function App() {
           placeholder="Neue Aufgabe"
           style={styles.input}
         />
-
-        <TouchableOpacity onPress={addTask}>
-          <Text style={styles.add}>＋</Text>
-        </TouchableOpacity>
       </View>
 
-      {/* Priorität nur anzeigen wenn Text eingegeben wurde */}
+      {/* Priority */}
       {text.length > 0 && (
         <View style={styles.priorityRow}>
           <TouchableOpacity onPress={() => setPriority('low')}>
@@ -127,13 +138,19 @@ export default function App() {
         </View>
       )}
 
-      <DraggableFlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        onDragEnd={({ data }) => setTasks(data)}
+      {/* List */}
+      <FlatList
+        data={filteredTasks}
+        keyExtractor={item => item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
       />
+
+      {/* Floating Action Button */}
+      <TouchableOpacity style={styles.fab} onPress={addTask}>
+        <Text style={styles.fabText}>＋</Text>
+      </TouchableOpacity>
+
     </View>
   );
 }
@@ -141,33 +158,45 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#eef1f5'
+  },
+  header: {
     padding: 20,
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#4d96ff',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 10
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold'
+  },
+  tabs: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 10
+  },
+  tab: {
+    fontSize: 14,
+    color: '#888'
+  },
+  activeTab: {
+    color: '#4d96ff',
+    fontWeight: 'bold'
   },
   inputRow: {
-    flexDirection: 'row',
-    marginBottom: 10
+    paddingHorizontal: 15
   },
   input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 8,
-    backgroundColor: 'white'
-  },
-  add: {
-    fontSize: 30,
-    marginLeft: 10
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 12,
+    elevation: 2
   },
   priorityRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 10
+    marginVertical: 10
   },
   priorityBtn: {
     fontSize: 28
@@ -175,31 +204,48 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 15,
-    marginBottom: 8
+    backgroundColor: 'white',
+    marginHorizontal: 15,
+    marginVertical: 6,
+    padding: 15,
+    borderRadius: 12,
+    borderLeftWidth: 6,
+    elevation: 3
   },
   text: {
     flex: 1,
     marginLeft: 10,
-    fontSize: 14,
-    color: 'white'
+    fontSize: 16
   },
   done: {
     textDecorationLine: 'line-through',
-    opacity: 0.7
+    opacity: 0.5
   },
   checkbox: {
-    fontSize: 18,
-    color: 'white'
+    fontSize: 18
   },
   arrow: {
     fontSize: 18,
-    marginHorizontal: 5,
-    color: 'white'
+    marginHorizontal: 8
   },
   delete: {
     fontSize: 18,
-    marginLeft: 5
+    marginLeft: 8
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 25,
+    right: 25,
+    backgroundColor: '#4d96ff',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5
+  },
+  fabText: {
+    color: 'white',
+    fontSize: 30
   }
 });
