@@ -39,7 +39,11 @@ export default function App() {
   };
 
   const formatDate = (date) => {
-    return date.toLocaleDateString("de-DE");
+    return date.toLocaleDateString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit"
+    });
   };
 
   const scheduleNotification = async (date, text) => {
