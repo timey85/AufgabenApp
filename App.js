@@ -7,7 +7,10 @@ import {
   StyleSheet,
   FlatList,
   useColorScheme,
-  Platform
+  Platform,
+  Switch,
+  Alert,
+  ScrollView
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
@@ -15,20 +18,38 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false
   })
 });
 
+const TASKS_KEY = "TASKS";
+const SETTINGS_KEY = "REMINDER_SETTINGS";
+
+const defaultSettings = {
+  reminder1Enabled: true,
+  reminder1DaysBefore: 1,
+  reminder1Time: "08:30",
+  reminder2Enabled: true,
+  reminder2HoursBefore: 2
+};
+
 export default function App() {
   const isDark = useColorScheme() === "dark";
 
   const bg = isDark ? "#4d4c4c" : "#f5f7fa";
-  const cardBg = isDark ? "#3a3a3a" : "white";
-  const textColor = isDark ? "white" : "black";
+  const cardBg = isDark ? "#3a3a3a" : "#ffffff";
+  const textColor = isDark ? "#ffffff" : "#000000";
+  const subTextColor = isDark ? "#d0d0d0" : "#555555";
+  const inputBorder = isDark ? "#666666" : "#d8dee6";
 
   const [tasks, setTasks] = useState([]);
+  const [settings, setSettings] = useState(defaultSettings);
+  const [settingsDraft, setSettingsDraft] = useState(defaultSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const [text, setText] = useState("");
   const [priority, setPriority] = useState("normal");
   const [category, setCategory] = useState("");
@@ -44,14 +65,25 @@ export default function App() {
   }, [tasks]);
 
   const initializeApp = async () => {
-    await loadTasks();
     await setupNotifications();
+
+    const loadedSettings = await loadSettings();
+    await loadTasks();
+
+    setSettings(loadedSettings);
+    setSettingsDraft(loadedSettings);
   };
 
   const setupNotifications = async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
-    if (status !== "granted") {
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== "granted") {
       console.log("Keine Berechtigung für Benachrichtigungen");
       return;
     }
@@ -67,7 +99,7 @@ export default function App() {
 
   const loadTasks = async () => {
     try {
-      const data = await AsyncStorage.getItem("TASKS");
+      const data = await AsyncStorage.getItem(TASKS_KEY);
       if (data) {
         setTasks(JSON.parse(data));
       }
@@ -78,9 +110,32 @@ export default function App() {
 
   const saveTasks = async () => {
     try {
-      await AsyncStorage.setItem("TASKS", JSON.stringify(tasks));
+      await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     } catch (error) {
       console.log("Fehler beim Speichern der Aufgaben:", error);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const data = await AsyncStorage.getItem(SETTINGS_KEY);
+      if (!data) return defaultSettings;
+
+      return {
+        ...defaultSettings,
+        ...JSON.parse(data)
+      };
+    } catch (error) {
+      console.log("Fehler beim Laden der Einstellungen:", error);
+      return defaultSettings;
+    }
+  };
+
+  const saveSettingsToStorage = async (newSettings) => {
+    try {
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+    } catch (error) {
+      console.log("Fehler beim Speichern der Einstellungen:", error);
     }
   };
 
@@ -92,44 +147,93 @@ export default function App() {
     });
   };
 
-  const scheduleNotification = async (selectedDate, taskText) => {
-    try {
-      const reminderDate = new Date(selectedDate);
-      reminderDate.setDate(reminderDate.getDate() - 1);
-      reminderDate.setHours(8, 30, 0, 0);
+  const isValidTimeString = (value) => {
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+  };
 
-      if (reminderDate <= new Date()) {
-        console.log("Erinnerungszeitpunkt liegt in der Vergangenheit");
-        return null;
+  const parseTimeString = (value) => {
+    const [hours, minutes] = value.split(":").map(Number);
+    return { hours, minutes };
+  };
+
+  const buildReminderDates = (selectedDate, reminderSettings) => {
+    const due = new Date(selectedDate);
+    const reminderDates = [];
+
+    if (reminderSettings.reminder1Enabled) {
+      const firstReminder = new Date(due);
+      firstReminder.setDate(
+        firstReminder.getDate() - Number(reminderSettings.reminder1DaysBefore || 0)
+      );
+
+      const timeString = reminderSettings.reminder1Time || "08:30";
+      if (isValidTimeString(timeString)) {
+        const { hours, minutes } = parseTimeString(timeString);
+        firstReminder.setHours(hours, minutes, 0, 0);
+        reminderDates.push(firstReminder);
       }
+    }
 
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Aufgabe morgen fällig",
-          body: taskText,
-          sound: true
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: reminderDate,
-          channelId: "default"
-        }
-      });
+    if (reminderSettings.reminder2Enabled) {
+      const secondReminder = new Date(due);
+      secondReminder.setHours(
+        secondReminder.getHours() - Number(reminderSettings.reminder2HoursBefore || 0)
+      );
+      reminderDates.push(secondReminder);
+    }
 
-      return notificationId;
-    } catch (error) {
-      console.log("Fehler beim Planen der Benachrichtigung:", error);
-      return null;
+    return reminderDates.filter((date) => date > new Date());
+  };
+
+  const scheduleNotificationsForTask = async (taskText, selectedDate, reminderSettings) => {
+    const reminderDates = buildReminderDates(selectedDate, reminderSettings);
+    const notificationIds = [];
+
+    for (const reminderDate of reminderDates) {
+      try {
+        const id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Aufgabe fällig",
+            body: taskText,
+            sound: true
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: reminderDate,
+            channelId: "default"
+          }
+        });
+
+        notificationIds.push(id);
+      } catch (error) {
+        console.log("Fehler beim Planen einer Benachrichtigung:", error);
+      }
+    }
+
+    return notificationIds;
+  };
+
+  const cancelTaskNotifications = async (notificationIds = []) => {
+    for (const id of notificationIds) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(id);
+      } catch (error) {
+        console.log("Fehler beim Löschen einer Benachrichtigung:", error);
+      }
     }
   };
 
   const addTask = async () => {
     if (!text.trim()) return;
 
-    let notificationId = null;
+    let notificationIds = [];
 
     if (dueDate) {
-      notificationId = await scheduleNotification(dueDate, text.trim());
+      notificationIds = await scheduleNotificationsForTask(
+        text.trim(),
+        dueDate,
+        settings
+      );
     }
 
     const newTask = {
@@ -140,7 +244,7 @@ export default function App() {
       category: category.trim(),
       dueDate: dueDate ? formatDate(dueDate) : null,
       dueDateRaw: dueDate ? dueDate.toISOString() : null,
-      notificationId
+      notificationIds
     };
 
     setTasks((prev) => [...prev, newTask]);
@@ -151,23 +255,44 @@ export default function App() {
     setDueDate(null);
   };
 
-  const toggleTask = (id) => {
+  const toggleTask = async (id) => {
+    const currentTask = tasks.find((t) => t.id === id);
+    if (!currentTask) return;
+
+    const newDoneValue = !currentTask.done;
+
+    if (newDoneValue && currentTask.notificationIds?.length) {
+      await cancelTaskNotifications(currentTask.notificationIds);
+    }
+
+    let newNotificationIds = currentTask.notificationIds || [];
+
+    if (!newDoneValue && currentTask.dueDateRaw) {
+      newNotificationIds = await scheduleNotificationsForTask(
+        currentTask.text,
+        new Date(currentTask.dueDateRaw),
+        settings
+      );
+    }
+
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              done: newDoneValue,
+              notificationIds: newDoneValue ? [] : newNotificationIds
+            }
+          : t
+      )
     );
   };
 
   const deleteTask = async (id) => {
     const taskToDelete = tasks.find((t) => t.id === id);
 
-    if (taskToDelete?.notificationId) {
-      try {
-        await Notifications.cancelScheduledNotificationAsync(
-          taskToDelete.notificationId
-        );
-      } catch (error) {
-        console.log("Fehler beim Löschen der Benachrichtigung:", error);
-      }
+    if (taskToDelete?.notificationIds?.length) {
+      await cancelTaskNotifications(taskToDelete.notificationIds);
     }
 
     setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -178,12 +303,69 @@ export default function App() {
     if (index <= 0) return;
 
     const newTasks = [...tasks];
-    [newTasks[index - 1], newTasks[index]] = [
-      newTasks[index],
-      newTasks[index - 1]
-    ];
-
+    [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
     setTasks(newTasks);
+  };
+
+  const rescheduleAllTasks = async (newSettings) => {
+    const updatedTasks = [];
+
+    for (const task of tasks) {
+      if (task.notificationIds?.length) {
+        await cancelTaskNotifications(task.notificationIds);
+      }
+
+      let newNotificationIds = [];
+
+      if (!task.done && task.dueDateRaw) {
+        newNotificationIds = await scheduleNotificationsForTask(
+          task.text,
+          new Date(task.dueDateRaw),
+          newSettings
+        );
+      }
+
+      updatedTasks.push({
+        ...task,
+        notificationIds: newNotificationIds
+      });
+    }
+
+    setTasks(updatedTasks);
+  };
+
+  const saveReminderSettings = async () => {
+    const normalizedSettings = {
+      ...settingsDraft,
+      reminder1DaysBefore: Number(settingsDraft.reminder1DaysBefore || 0),
+      reminder2HoursBefore: Number(settingsDraft.reminder2HoursBefore || 0)
+    };
+
+    if (
+      normalizedSettings.reminder1Enabled &&
+      !isValidTimeString(normalizedSettings.reminder1Time)
+    ) {
+      Alert.alert("Ungültige Uhrzeit", "Bitte gib die Uhrzeit im Format HH:MM ein.");
+      return;
+    }
+
+    if (normalizedSettings.reminder1DaysBefore < 0) {
+      Alert.alert("Ungültiger Wert", "Tage vorher dürfen nicht negativ sein.");
+      return;
+    }
+
+    if (normalizedSettings.reminder2HoursBefore < 0) {
+      Alert.alert("Ungültiger Wert", "Stunden vorher dürfen nicht negativ sein.");
+      return;
+    }
+
+    await saveSettingsToStorage(normalizedSettings);
+    setSettings(normalizedSettings);
+    setSettingsDraft(normalizedSettings);
+    await rescheduleAllTasks(normalizedSettings);
+    setSettingsOpen(false);
+
+    Alert.alert("Gespeichert", "Die Erinnerungen wurden für alle Aufgaben aktualisiert.");
   };
 
   const getColor = (taskPriority) => {
@@ -229,20 +411,12 @@ export default function App() {
         </Text>
       </TouchableOpacity>
 
-      <Text
-        style={[
-          styles.text,
-          item.done && styles.done,
-          { color: textColor }
-        ]}
-      >
+      <Text style={[styles.text, item.done && styles.done, { color: textColor }]}>
         {item.text}
       </Text>
 
       {item.dueDate && (
-        <Text style={[styles.dateText, { color: textColor }]}>
-          {item.dueDate}
-        </Text>
+        <Text style={[styles.dateText, { color: textColor }]}>{item.dueDate}</Text>
       )}
 
       <TouchableOpacity onPress={() => moveUp(item.id)}>
@@ -261,7 +435,154 @@ export default function App() {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Aufgaben</Text>
+
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => {
+            setSettingsDraft(settings);
+            setSettingsOpen((prev) => !prev);
+          }}
+        >
+          <Text style={styles.settingsButtonText}>⚙️</Text>
+        </TouchableOpacity>
       </View>
+
+      {settingsOpen && (
+        <ScrollView
+          style={[styles.settingsPanel, { backgroundColor: cardBg }]}
+          contentContainerStyle={styles.settingsPanelContent}
+        >
+          <Text style={[styles.settingsTitle, { color: textColor }]}>
+            Erinnerungen
+          </Text>
+
+          <Text style={[styles.settingsInfo, { color: subTextColor }]}>
+            Diese Einstellungen gelten für alle Aufgaben mit Fälligkeitsdatum.
+          </Text>
+
+          <View style={styles.settingBlock}>
+            <View style={styles.settingHeaderRow}>
+              <Text style={[styles.settingLabel, { color: textColor }]}>
+                Erinnerung 1 aktiv
+              </Text>
+              <Switch
+                value={settingsDraft.reminder1Enabled}
+                onValueChange={(value) =>
+                  setSettingsDraft((prev) => ({
+                    ...prev,
+                    reminder1Enabled: value
+                  }))
+                }
+              />
+            </View>
+
+            <Text style={[styles.inlineLabel, { color: subTextColor }]}>
+              Tage vorher
+            </Text>
+            <TextInput
+              value={String(settingsDraft.reminder1DaysBefore)}
+              onChangeText={(value) =>
+                setSettingsDraft((prev) => ({
+                  ...prev,
+                  reminder1DaysBefore: value.replace(/[^0-9]/g, "")
+                }))
+              }
+              keyboardType="numeric"
+              style={[
+                styles.settingsInput,
+                {
+                  backgroundColor: bg,
+                  color: textColor,
+                  borderColor: inputBorder
+                }
+              ]}
+            />
+
+            <Text style={[styles.inlineLabel, { color: subTextColor }]}>
+              Uhrzeit (HH:MM)
+            </Text>
+            <TextInput
+              value={settingsDraft.reminder1Time}
+              onChangeText={(value) =>
+                setSettingsDraft((prev) => ({
+                  ...prev,
+                  reminder1Time: value
+                }))
+              }
+              placeholder="08:30"
+              placeholderTextColor="#999"
+              style={[
+                styles.settingsInput,
+                {
+                  backgroundColor: bg,
+                  color: textColor,
+                  borderColor: inputBorder
+                }
+              ]}
+            />
+          </View>
+
+          <View style={styles.settingBlock}>
+            <View style={styles.settingHeaderRow}>
+              <Text style={[styles.settingLabel, { color: textColor }]}>
+                Erinnerung 2 aktiv
+              </Text>
+              <Switch
+                value={settingsDraft.reminder2Enabled}
+                onValueChange={(value) =>
+                  setSettingsDraft((prev) => ({
+                    ...prev,
+                    reminder2Enabled: value
+                  }))
+                }
+              />
+            </View>
+
+            <Text style={[styles.inlineLabel, { color: subTextColor }]}>
+              Stunden vorher
+            </Text>
+            <TextInput
+              value={String(settingsDraft.reminder2HoursBefore)}
+              onChangeText={(value) =>
+                setSettingsDraft((prev) => ({
+                  ...prev,
+                  reminder2HoursBefore: value.replace(/[^0-9]/g, "")
+                }))
+              }
+              keyboardType="numeric"
+              style={[
+                styles.settingsInput,
+                {
+                  backgroundColor: bg,
+                  color: textColor,
+                  borderColor: inputBorder
+                }
+              ]}
+            />
+          </View>
+
+          <View style={styles.settingsActions}>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: "#4d96ff" }]}
+              onPress={() => {
+                setSettingsDraft(settings);
+                setSettingsOpen(false);
+              }}
+            >
+              <Text style={[styles.secondaryBtnText, { color: "#4d96ff" }]}>
+                Abbrechen
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={saveReminderSettings}
+            >
+              <Text style={styles.primaryBtnText}>Speichern</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      )}
 
       <View style={styles.inputRow}>
         <TextInput
@@ -321,12 +642,7 @@ export default function App() {
                       { backgroundColor: cardBg }
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.dropdownText,
-                        { color: textColor }
-                      ]}
-                    >
+                    <Text style={[styles.dropdownText, { color: textColor }]}>
                       {cat}
                     </Text>
                   </View>
@@ -344,7 +660,9 @@ export default function App() {
           onChange={(event, selectedDate) => {
             setShowPicker(false);
             if (selectedDate) {
-              setDueDate(selectedDate);
+              const normalizedDate = new Date(selectedDate);
+              normalizedDate.setHours(8, 30, 0, 0);
+              setDueDate(normalizedDate);
             }
           }}
         />
@@ -371,7 +689,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1
+  },
 
   header: {
     backgroundColor: "#4d96ff",
@@ -379,13 +699,109 @@ const styles = StyleSheet.create({
     alignItems: "center",
     height: 40,
     borderBottomLeftRadius: 13,
-    borderBottomRightRadius: 13
+    borderBottomRightRadius: 13,
+    position: "relative"
   },
 
   title: {
     color: "white",
     fontSize: 22,
     fontWeight: "bold"
+  },
+
+  settingsButton: {
+    position: "absolute",
+    right: 12,
+    top: 1,
+    padding: 4
+  },
+
+  settingsButtonText: {
+    fontSize: 24
+  },
+
+  settingsPanel: {
+    marginHorizontal: 10,
+    marginTop: 10,
+    borderRadius: 14,
+    elevation: 4
+  },
+
+  settingsPanelContent: {
+    padding: 14
+  },
+
+  settingsTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 4
+  },
+
+  settingsInfo: {
+    fontSize: 13,
+    marginBottom: 14
+  },
+
+  settingBlock: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#d9d9d9"
+  },
+
+  settingHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8
+  },
+
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: "600"
+  },
+
+  inlineLabel: {
+    fontSize: 13,
+    marginTop: 8,
+    marginBottom: 6
+  },
+
+  settingsInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 42
+  },
+
+  settingsActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 4
+  },
+
+  secondaryBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginRight: 10
+  },
+
+  secondaryBtnText: {
+    fontWeight: "600"
+  },
+
+  primaryBtn: {
+    backgroundColor: "#4d96ff",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+
+  primaryBtnText: {
+    color: "white",
+    fontWeight: "600"
   },
 
   inputRow: {
