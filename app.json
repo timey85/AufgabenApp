@@ -6,6 +6,15 @@
     "orientation": "portrait",
     "icon": "./icon.png",
     "platforms": ["android"],
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./icon.png",
+          "color": "#ffffff"
+        }
+      ]
+    ],
     "android": {
       "package": "com.aufgaben.app",
       "adaptiveIcon": {
