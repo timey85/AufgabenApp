@@ -1,19 +1,32 @@
 import React, { useState, useEffect } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, FlatList, useColorScheme
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  FlatList,
+  useColorScheme,
+  Platform
 } from "react-native";
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
+import DateTimePicker from "@react-native-community/datetimepicker";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false
+  })
+});
 
 export default function App() {
-
   const isDark = useColorScheme() === "dark";
 
-  const bg = isDark ? '#4d4c4c' : '#f5f7fa';
-  const cardBg = isDark ? '#3a3a3a' : 'white';
-  const textColor = isDark ? 'white' : 'black';
+  const bg = isDark ? "#4d4c4c" : "#f5f7fa";
+  const cardBg = isDark ? "#3a3a3a" : "white";
+  const textColor = isDark ? "white" : "black";
 
   const [tasks, setTasks] = useState([]);
   const [text, setText] = useState("");
@@ -23,19 +36,52 @@ export default function App() {
   const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
-    loadTasks();
-    Notifications.requestPermissionsAsync();
+    initializeApp();
   }, []);
 
-  useEffect(() => { saveTasks(); }, [tasks]);
+  useEffect(() => {
+    saveTasks();
+  }, [tasks]);
+
+  const initializeApp = async () => {
+    await loadTasks();
+    await setupNotifications();
+  };
+
+  const setupNotifications = async () => {
+    const { status } = await Notifications.requestPermissionsAsync();
+
+    if (status !== "granted") {
+      console.log("Keine Berechtigung für Benachrichtigungen");
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX,
+        sound: "default"
+      });
+    }
+  };
 
   const loadTasks = async () => {
-    const data = await AsyncStorage.getItem("TASKS");
-    if (data) setTasks(JSON.parse(data));
+    try {
+      const data = await AsyncStorage.getItem("TASKS");
+      if (data) {
+        setTasks(JSON.parse(data));
+      }
+    } catch (error) {
+      console.log("Fehler beim Laden der Aufgaben:", error);
+    }
   };
 
   const saveTasks = async () => {
-    await AsyncStorage.setItem("TASKS", JSON.stringify(tasks));
+    try {
+      await AsyncStorage.setItem("TASKS", JSON.stringify(tasks));
+    } catch (error) {
+      console.log("Fehler beim Speichern der Aufgaben:", error);
+    }
   };
 
   const formatDate = (date) => {
@@ -46,71 +92,120 @@ export default function App() {
     });
   };
 
-  const scheduleNotification = async (date, text) => {
-    await Notifications.scheduleNotificationAsync({
-      content: { title: "Aufgabe fällig", body: text },
-      trigger: date
-    });
+  const scheduleNotification = async (selectedDate, taskText) => {
+    try {
+      const reminderDate = new Date(selectedDate);
+      reminderDate.setDate(reminderDate.getDate() - 1);
+      reminderDate.setHours(8, 30, 0, 0);
+
+      if (reminderDate <= new Date()) {
+        console.log("Erinnerungszeitpunkt liegt in der Vergangenheit");
+        return null;
+      }
+
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Aufgabe morgen fällig",
+          body: taskText,
+          sound: true
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: reminderDate,
+          channelId: "default"
+        }
+      });
+
+      return notificationId;
+    } catch (error) {
+      console.log("Fehler beim Planen der Benachrichtigung:", error);
+      return null;
+    }
   };
 
   const addTask = async () => {
-    if (!text) return;
+    if (!text.trim()) return;
+
+    let notificationId = null;
+
+    if (dueDate) {
+      notificationId = await scheduleNotification(dueDate, text.trim());
+    }
 
     const newTask = {
       id: Date.now().toString(),
-      text,
+      text: text.trim(),
       done: false,
       priority,
-      category,
-      dueDate: dueDate ? formatDate(dueDate) : null
+      category: category.trim(),
+      dueDate: dueDate ? formatDate(dueDate) : null,
+      dueDateRaw: dueDate ? dueDate.toISOString() : null,
+      notificationId
     };
 
-    setTasks([...tasks, newTask]);
-
-    if (dueDate) await scheduleNotification(dueDate, text);
+    setTasks((prev) => [...prev, newTask]);
 
     setText("");
     setCategory("");
+    setPriority("normal");
     setDueDate(null);
   };
 
   const toggleTask = (id) => {
-    setTasks(tasks.map(t =>
-      t.id === id ? { ...t, done: !t.done } : t
-    ));
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+    );
   };
 
-  const deleteTask = (id) => {
-    setTasks(tasks.filter(t => t.id !== id));
+  const deleteTask = async (id) => {
+    const taskToDelete = tasks.find((t) => t.id === id);
+
+    if (taskToDelete?.notificationId) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(
+          taskToDelete.notificationId
+        );
+      } catch (error) {
+        console.log("Fehler beim Löschen der Benachrichtigung:", error);
+      }
+    }
+
+    setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
   const moveUp = (id) => {
-    const index = tasks.findIndex(t => t.id === id);
+    const index = tasks.findIndex((t) => t.id === id);
     if (index <= 0) return;
 
     const newTasks = [...tasks];
-    [newTasks[index - 1], newTasks[index]] =
-      [newTasks[index], newTasks[index - 1]];
+    [newTasks[index - 1], newTasks[index]] = [
+      newTasks[index],
+      newTasks[index - 1]
+    ];
 
     setTasks(newTasks);
   };
 
-  const getColor = (priority) => {
-    switch (priority) {
-      case 'high': return '#ff6b6b';
-      case 'low': return '#6bcB77';
-      default: return '#4d96ff';
+  const getColor = (taskPriority) => {
+    switch (taskPriority) {
+      case "high":
+        return "#ff6b6b";
+      case "low":
+        return "#6bcB77";
+      default:
+        return "#4d96ff";
     }
   };
 
-  // 📂 Kategorien sammeln
-  const uniqueCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))];
+  const uniqueCategories = [
+    ...new Set(tasks.map((t) => t.category).filter(Boolean))
+  ];
 
   const groupedTasks = () => {
     const groups = {};
 
-    tasks.forEach(task => {
-      const key = task.category || "";
+    tasks.forEach((task) => {
+      const key = task.category || "Ohne Kategorie";
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     });
@@ -118,31 +213,34 @@ export default function App() {
     return Object.entries(groups);
   };
 
-  const renderItem = ({ item }) => (
-    <View style={[
-      styles.card,
-      {
-        backgroundColor: cardBg,
-        borderLeftColor: getColor(item.priority)
-      }
-    ]}>
-
+  const renderTaskItem = (item) => (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: cardBg,
+          borderLeftColor: getColor(item.priority)
+        }
+      ]}
+    >
       <TouchableOpacity onPress={() => toggleTask(item.id)}>
         <Text style={[styles.cardIcon, { color: textColor }]}>
           {item.done ? "☑" : "☐"}
         </Text>
       </TouchableOpacity>
 
-      <Text style={[
-        styles.text,
-        item.done && styles.done,
-        { color: textColor }
-      ]}>
+      <Text
+        style={[
+          styles.text,
+          item.done && styles.done,
+          { color: textColor }
+        ]}
+      >
         {item.text}
       </Text>
 
       {item.dueDate && (
-        <Text style={{ fontSize: 12, marginRight: 6, color: textColor }}>
+        <Text style={[styles.dateText, { color: textColor }]}>
           {item.dueDate}
         </Text>
       )}
@@ -153,7 +251,7 @@ export default function App() {
 
       {item.done && (
         <TouchableOpacity onPress={() => deleteTask(item.id)}>
-          <Text style={[styles.cardIcon, { marginLeft: 2 }]}>🗑️</Text>
+          <Text style={styles.cardIcon}>🗑️</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -161,20 +259,20 @@ export default function App() {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
-
-      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>Aufgaben</Text>
       </View>
 
-      {/* INPUT */}
       <View style={styles.inputRow}>
         <TextInput
           value={text}
           onChangeText={setText}
           placeholder="Neue Aufgabe"
           placeholderTextColor="#aaa"
-          style={[styles.input, { backgroundColor: cardBg, color: textColor }]}
+          style={[
+            styles.input,
+            { backgroundColor: cardBg, color: textColor }
+          ]}
         />
 
         <TouchableOpacity style={styles.addBtn} onPress={addTask}>
@@ -182,7 +280,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* KATEGORIE */}
       {text.length > 0 && (
         <>
           <View style={styles.categoryRow}>
@@ -191,36 +288,45 @@ export default function App() {
               onChangeText={setCategory}
               placeholder="Kategorie"
               placeholderTextColor="#aaa"
-              style={[styles.categoryInput, { backgroundColor: cardBg, color: textColor }]}
+              style={[
+                styles.categoryInput,
+                { backgroundColor: cardBg, color: textColor }
+              ]}
             />
 
-            {/* Farben */}
-            <TouchableOpacity onPress={() => setPriority('low')}>
+            <TouchableOpacity onPress={() => setPriority("low")}>
               <Text style={styles.icon}>🟢</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setPriority('normal')}>
+            <TouchableOpacity onPress={() => setPriority("normal")}>
               <Text style={styles.icon}>🔵</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setPriority('high')}>
+            <TouchableOpacity onPress={() => setPriority("high")}>
               <Text style={styles.icon}>🔴</Text>
             </TouchableOpacity>
 
-            {/* Kalender */}
             <TouchableOpacity onPress={() => setShowPicker(true)}>
               <Text style={styles.icon}>📅</Text>
             </TouchableOpacity>
-            
           </View>
 
-          {/* Dropdown */}
           {uniqueCategories.length > 0 && (
             <View style={styles.dropdown}>
-              {uniqueCategories.map(cat => (
+              {uniqueCategories.map((cat) => (
                 <TouchableOpacity key={cat} onPress={() => setCategory(cat)}>
-                  <View style={[styles.dropdownItem, { backgroundColor: cardBg }]}>
-                    <Text style={[styles.dropdownText, { color: textColor }]}>
+                  <View
+                    style={[
+                      styles.dropdownItem,
+                      { backgroundColor: cardBg }
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownText,
+                        { color: textColor }
+                      ]}
+                    >
                       {cat}
                     </Text>
                   </View>
@@ -231,19 +337,19 @@ export default function App() {
         </>
       )}
 
-      {/* DATE PICKER */}
       {showPicker && (
         <DateTimePicker
           value={dueDate || new Date()}
           mode="date"
-          onChange={(e, d) => {
+          onChange={(event, selectedDate) => {
             setShowPicker(false);
-            if (d) setDueDate(d);
+            if (selectedDate) {
+              setDueDate(selectedDate);
+            }
           }}
         />
       )}
 
-      {/* LISTE */}
       <FlatList
         data={groupedTasks()}
         keyExtractor={(item) => item[0]}
@@ -253,16 +359,13 @@ export default function App() {
               {item[0]}
             </Text>
 
-            {item[1].map(task => (
-              <View key={task.id}>
-                {renderItem({ item: task })}
-              </View>
+            {item[1].map((task) => (
+              <View key={task.id}>{renderTaskItem(task)}</View>
             ))}
           </View>
         )}
         contentContainerStyle={{ paddingBottom: 120 }}
       />
-
     </View>
   );
 }
@@ -271,25 +374,24 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   header: {
-    backgroundColor: '#4d96ff',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '40px',
+    backgroundColor: "#4d96ff",
+    justifyContent: "center",
+    alignItems: "center",
+    height: 40,
     borderBottomLeftRadius: 13,
     borderBottomRightRadius: 13
   },
 
   title: {
-    color: 'white',
+    color: "white",
     fontSize: 22,
-    fontWeight: 'bold'
+    fontWeight: "bold"
   },
 
   inputRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 10,
-    alignItems: 'center'
+    alignItems: "center"
   },
 
   input: {
@@ -297,12 +399,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     marginVertical: 5,
-    height: 35
+    height: 40
   },
 
   categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 10,
     marginTop: 2
   },
@@ -310,22 +412,22 @@ const styles = StyleSheet.create({
   categoryInput: {
     flex: 1,
     borderRadius: 12,
-    height: 35,
+    height: 40,
     paddingHorizontal: 12,
-    textAlignVertical: 'center',
+    textAlignVertical: "center",
     marginRight: 8
   },
 
   addBtn: {
     marginLeft: 10,
-    backgroundColor: '#4d96ff',
+    backgroundColor: "#4d96ff",
     borderRadius: 30,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
 
   addText: {
-    color: 'white',
+    color: "white",
     fontSize: 20
   },
 
@@ -334,24 +436,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 3,
     elevation: 3,
-    overflow: 'hidden'
+    overflow: "hidden"
   },
 
   dropdownItem: {
-    backgroundColor: 'transparent',
     paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 1
+    paddingHorizontal: 12
   },
 
   dropdownText: {
-    fontSize: 14,
+    fontSize: 14
   },
 
   categoryTitle: {
     marginTop: 10,
     marginLeft: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     fontSize: 17
   },
 
@@ -359,19 +459,18 @@ const styles = StyleSheet.create({
     fontSize: 22,
     marginHorizontal: 4
   },
+
   cardIcon: {
     fontSize: 20,
     marginHorizontal: 4
   },
 
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginHorizontal: 10,
     marginVertical: 3,
-    padding: 1,
-    paddingLeft: 5,
-    paddingRight: 5,
+    padding: 6,
     borderRadius: 8,
     borderLeftWidth: 6
   },
@@ -382,8 +481,13 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
 
+  dateText: {
+    fontSize: 12,
+    marginRight: 6
+  },
+
   done: {
-    textDecorationLine: 'line-through',
+    textDecorationLine: "line-through",
     opacity: 0.5
   }
 });
