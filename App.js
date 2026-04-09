@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -55,6 +55,7 @@ export default function App() {
   const [category, setCategory] = useState("");
   const [dueDate, setDueDate] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+  const hasLoadedTasks = useRef(false);
 
   useEffect(() => {
     initializeApp();
@@ -68,10 +69,13 @@ export default function App() {
     await setupNotifications();
 
     const loadedSettings = await loadSettings();
-    await loadTasks();
-
+    const loadedTasks = await loadTasks();
+  
     setSettings(loadedSettings);
     setSettingsDraft(loadedSettings);
+    setTasks(loadedTasks);
+  
+    hasLoadedTasks.current = true;
   };
 
   const setupNotifications = async () => {
@@ -98,15 +102,14 @@ export default function App() {
   };
 
   const loadTasks = async () => {
-    try {
-      const data = await AsyncStorage.getItem(TASKS_KEY);
-      if (data) {
-        setTasks(JSON.parse(data));
-      }
-    } catch (error) {
-      console.log("Fehler beim Laden der Aufgaben:", error);
-    }
-  };
+  try {
+    const data = await AsyncStorage.getItem(TASKS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.log("Fehler beim Laden der Aufgaben:", error);
+    return [];
+  }
+};
 
   const saveTasks = async () => {
     try {
