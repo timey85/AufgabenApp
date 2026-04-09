@@ -205,7 +205,7 @@ export default function App() {
     const groups = {};
 
     tasks.forEach((task) => {
-      const key = task.category || "Ohne Kategorie";
+      const key = task.category || "";
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     });
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     marginVertical: 5,
-    height: 40
+    height: 35
   },
 
   categoryRow: {
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   categoryInput: {
     flex: 1,
     borderRadius: 12,
-    height: 40,
+    height: 35,
     paddingHorizontal: 12,
     textAlignVertical: "center",
     marginRight: 8
@@ -470,7 +470,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 10,
     marginVertical: 3,
-    padding: 6,
+    padding: 1,
+    paddingLeft: 5,
+    paddingRight: 5,
     borderRadius: 8,
     borderLeftWidth: 6
   },
