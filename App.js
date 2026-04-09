@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -45,7 +45,8 @@ export default function App() {
   const subTextColor = isDark ? "#d0d0d0" : "#555555";
   const inputBorder = isDark ? "#666666" : "#d8dee6";
 
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState(null);
+  const [isReady, setIsReady] = useState(false);
   const [settings, setSettings] = useState(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -55,28 +56,30 @@ export default function App() {
   const [category, setCategory] = useState("");
   const [dueDate, setDueDate] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
-  const hasLoadedTasks = useRef(false);
 
   useEffect(() => {
-    initializeApp();
+    const init = async () => {
+      await setupNotifications();
+  
+      const loadedSettings = await loadSettings();
+      const loadedTasks = await loadTasks();
+  
+      setSettings(loadedSettings);
+      setSettingsDraft(loadedSettings);
+      setTasks(loadedTasks);
+  
+      setIsReady(true);
+    };
+  
+    init();
   }, []);
 
   useEffect(() => {
+    if (!isReady) return;
+    if (tasks === null) return;
+  
     saveTasks();
-  }, [tasks]);
-
-  const initializeApp = async () => {
-    await setupNotifications();
-
-    const loadedSettings = await loadSettings();
-    const loadedTasks = await loadTasks();
-  
-    setSettings(loadedSettings);
-    setSettingsDraft(loadedSettings);
-    setTasks(loadedTasks);
-  
-    hasLoadedTasks.current = true;
-  };
+  }, [tasks, isReady]);
 
   const setupNotifications = async () => {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -102,15 +105,15 @@ export default function App() {
   };
 
   const loadTasks = async () => {
-  try {
-    const data = await AsyncStorage.getItem(TASKS_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.log("Fehler beim Laden der Aufgaben:", error);
-    return [];
-  }
-};
-
+    try {
+      const data = await AsyncStorage.getItem(TASKS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.log("Fehler beim Laden der Aufgaben:", error);
+      return [];
+    }
+  };
+  
   const saveTasks = async () => {
     try {
       await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
@@ -259,6 +262,8 @@ export default function App() {
   };
 
   const toggleTask = async (id) => {
+    if (!tasks) return;
+    
     const currentTask = tasks.find((t) => t.id === id);
     if (!currentTask) return;
 
@@ -292,6 +297,8 @@ export default function App() {
   };
 
   const deleteTask = async (id) => {
+    if (!tasks) return;
+    
     const taskToDelete = tasks.find((t) => t.id === id);
 
     if (taskToDelete?.notificationIds?.length) {
@@ -302,6 +309,8 @@ export default function App() {
   };
 
   const moveUp = (id) => {
+    if (!tasks) return;
+    
     const index = tasks.findIndex((t) => t.id === id);
     if (index <= 0) return;
 
@@ -382,19 +391,21 @@ export default function App() {
     }
   };
 
-  const uniqueCategories = [
-    ...new Set(tasks.map((t) => t.category).filter(Boolean))
-  ];
+  const uniqueCategories = tasks
+    ? [...new Set(tasks.map((t) => t.category).filter(Boolean))]
+    : [];
 
   const groupedTasks = () => {
+    if (!tasks) return [];
+  
     const groups = {};
-
+  
     tasks.forEach((task) => {
       const key = task.category || "";
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     });
-
+  
     return Object.entries(groups);
   };
 
@@ -433,6 +444,14 @@ export default function App() {
       )}
     </View>
   );
+
+  if (!isReady || tasks === null) {
+    return (
+      <View style={[styles.container, { backgroundColor: bg, justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: textColor }}>Lade Aufgaben...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
