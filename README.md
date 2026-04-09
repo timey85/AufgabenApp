@@ -1,7 +1,9 @@
 
-Ein Commit soll keinen Build ausführen:
-An die Commit-Message [skip ci] anhängen
+- Ein Commit soll keinen Build ausführen - An die Commit-Message folgendes anhängen:
 
-Die Benutzeroberfläche (UI) vor dem Build anschauen:
+[skip ci]
+
+- Die Benutzeroberfläche (UI) vor dem Build anschauen:
+
 https://snack.expo.dev/
 
