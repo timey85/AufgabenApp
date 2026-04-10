@@ -55,29 +55,36 @@ export default function App() {
   const [priority, setPriority] = useState("normal");
   const [category, setCategory] = useState("");
   const [dueDate, setDueDate] = useState(null);
-  const [showPicker, setShowPicker] = useState(false);
+  const [hasTime, setHasTime] = useState(false);
+
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       await setupNotifications();
-  
+
       const loadedSettings = await loadSettings();
       const loadedTasks = await loadTasks();
-  
+      const syncedTasks = await syncNotificationsForVisibleTasks(
+        loadedTasks,
+        loadedSettings
+      );
+
       setSettings(loadedSettings);
       setSettingsDraft(loadedSettings);
-      setTasks(loadedTasks);
-  
+      setTasks(syncedTasks);
+
       setIsReady(true);
     };
-  
+
     init();
   }, []);
 
   useEffect(() => {
     if (!isReady) return;
     if (tasks === null) return;
-  
+
     saveTasks();
   }, [tasks, isReady]);
 
@@ -113,7 +120,7 @@ export default function App() {
       return [];
     }
   };
-  
+
   const saveTasks = async () => {
     try {
       await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
@@ -153,6 +160,17 @@ export default function App() {
     });
   };
 
+  const formatTime = (date) => {
+    return date.toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const formatDateTime = (date) => {
+    return `${formatDate(date)} ${formatTime(date)}`;
+  };
+
   const isValidTimeString = (value) => {
     return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
   };
@@ -162,50 +180,107 @@ export default function App() {
     return { hours, minutes };
   };
 
-  const buildReminderDates = (selectedDate, reminderSettings) => {
+  const buildDateWithTime = (baseDate, timeSource) => {
+    const result = new Date(baseDate);
+    result.setHours(
+      timeSource.getHours(),
+      timeSource.getMinutes(),
+      0,
+      0
+    );
+    return result;
+  };
+
+  const getInitialDueDate = () => {
+    const initial = new Date();
+    initial.setSeconds(0, 0);
+    initial.setHours(10, 0, 0, 0);
+    return initial;
+  };
+
+  const getDueDateForCalculation = (selectedDate, itemHasTime = true) => {
     const due = new Date(selectedDate);
-    const reminderDates = [];
+
+    if (!itemHasTime) {
+      due.setHours(12, 0, 0, 0);
+    }
+
+    return due;
+  };
+
+  const getReminder1Title = (daysBefore) => {
+    if (daysBefore === 1) return "Aufgabe in einem Tag fällig";
+    return `Aufgabe in ${daysBefore} Tagen fällig`;
+  };
+
+  const getReminder2Title = (hoursBefore) => {
+    if (hoursBefore === 1) return "Aufgabe in einer Stunde fällig";
+    return `Aufgabe in ${hoursBefore} Stunden fällig`;
+  };
+
+  const buildReminderEntries = (selectedDate, reminderSettings, itemHasTime = true) => {
+    const due = getDueDateForCalculation(selectedDate, itemHasTime);
+    const reminderEntries = [];
 
     if (reminderSettings.reminder1Enabled) {
       const firstReminder = new Date(due);
-      firstReminder.setDate(
-        firstReminder.getDate() - Number(reminderSettings.reminder1DaysBefore || 0)
-      );
+      const daysBefore = Number(reminderSettings.reminder1DaysBefore || 0);
+
+      firstReminder.setDate(firstReminder.getDate() - daysBefore);
 
       const timeString = reminderSettings.reminder1Time || "08:30";
       if (isValidTimeString(timeString)) {
         const { hours, minutes } = parseTimeString(timeString);
         firstReminder.setHours(hours, minutes, 0, 0);
-        reminderDates.push(firstReminder);
+
+        reminderEntries.push({
+          date: firstReminder,
+          title: getReminder1Title(daysBefore)
+        });
       }
     }
 
-    if (reminderSettings.reminder2Enabled) {
+    if (reminderSettings.reminder2Enabled && itemHasTime) {
       const secondReminder = new Date(due);
-      secondReminder.setHours(
-        secondReminder.getHours() - Number(reminderSettings.reminder2HoursBefore || 0)
+      const hoursBefore = Number(reminderSettings.reminder2HoursBefore || 0);
+
+      secondReminder.setTime(
+        secondReminder.getTime() - hoursBefore * 60 * 60 * 1000
       );
-      reminderDates.push(secondReminder);
+
+      reminderEntries.push({
+        date: secondReminder,
+        title: getReminder2Title(hoursBefore)
+      });
     }
 
-    return reminderDates.filter((date) => date > new Date());
+    return reminderEntries.filter((entry) => entry.date.getTime() > Date.now());
   };
 
-  const scheduleNotificationsForTask = async (taskText, selectedDate, reminderSettings) => {
-    const reminderDates = buildReminderDates(selectedDate, reminderSettings);
+  const scheduleNotificationsForTask = async (
+    taskText,
+    selectedDate,
+    reminderSettings,
+    itemHasTime = true
+  ) => {
+    const reminderEntries = buildReminderEntries(
+      selectedDate,
+      reminderSettings,
+      itemHasTime
+    );
     const notificationIds = [];
 
-    for (const reminderDate of reminderDates) {
+    for (const entry of reminderEntries) {
       try {
         const id = await Notifications.scheduleNotificationAsync({
           content: {
-            title: "Aufgabe fällig",
+            title: entry.title,
             body: taskText,
             sound: true
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: reminderDate,
+            date: entry.date,
             channelId: "default"
           }
         });
@@ -229,16 +304,54 @@ export default function App() {
     }
   };
 
+  const syncNotificationsForVisibleTasks = async (taskList, reminderSettings) => {
+    try {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    } catch (error) {
+      console.log("Fehler beim globalen Löschen geplanter Benachrichtigungen:", error);
+    }
+
+    const updatedTasks = [];
+
+    for (const task of taskList) {
+      let newNotificationIds = [];
+
+      if (!task.done && task.dueDateRaw) {
+        newNotificationIds = await scheduleNotificationsForTask(
+          task.text,
+          new Date(task.dueDateRaw),
+          reminderSettings,
+          task.hasTime !== false
+        );
+      }
+
+      updatedTasks.push({
+        ...task,
+        notificationIds: newNotificationIds
+      });
+    }
+
+    return updatedTasks;
+  };
+
   const addTask = async () => {
     if (!text.trim()) return;
 
     let notificationIds = [];
+    let dueDateRaw = null;
+    let dueDateLabel = null;
+    let dueTimeLabel = null;
 
     if (dueDate) {
+      dueDateRaw = dueDate.toISOString();
+      dueDateLabel = formatDate(dueDate);
+      dueTimeLabel = hasTime ? formatTime(dueDate) : null;
+
       notificationIds = await scheduleNotificationsForTask(
         text.trim(),
         dueDate,
-        settings
+        settings,
+        hasTime
       );
     }
 
@@ -248,8 +361,10 @@ export default function App() {
       done: false,
       priority,
       category: category.trim(),
-      dueDate: dueDate ? formatDate(dueDate) : null,
-      dueDateRaw: dueDate ? dueDate.toISOString() : null,
+      hasTime,
+      dueDate: dueDateLabel,
+      dueTime: dueTimeLabel,
+      dueDateRaw,
       notificationIds
     };
 
@@ -259,11 +374,12 @@ export default function App() {
     setCategory("");
     setPriority("normal");
     setDueDate(null);
+    setHasTime(false);
   };
 
   const toggleTask = async (id) => {
     if (!tasks) return;
-    
+
     const currentTask = tasks.find((t) => t.id === id);
     if (!currentTask) return;
 
@@ -279,7 +395,8 @@ export default function App() {
       newNotificationIds = await scheduleNotificationsForTask(
         currentTask.text,
         new Date(currentTask.dueDateRaw),
-        settings
+        settings,
+        currentTask.hasTime !== false
       );
     }
 
@@ -298,7 +415,7 @@ export default function App() {
 
   const deleteTask = async (id) => {
     if (!tasks) return;
-    
+
     const taskToDelete = tasks.find((t) => t.id === id);
 
     if (taskToDelete?.notificationIds?.length) {
@@ -310,7 +427,7 @@ export default function App() {
 
   const moveUp = (id) => {
     if (!tasks) return;
-    
+
     const index = tasks.findIndex((t) => t.id === id);
     if (index <= 0) return;
 
@@ -320,6 +437,8 @@ export default function App() {
   };
 
   const rescheduleAllTasks = async (newSettings) => {
+    if (!tasks) return;
+
     const updatedTasks = [];
 
     for (const task of tasks) {
@@ -333,7 +452,8 @@ export default function App() {
         newNotificationIds = await scheduleNotificationsForTask(
           task.text,
           new Date(task.dueDateRaw),
-          newSettings
+          newSettings,
+          task.hasTime !== false
         );
       }
 
@@ -397,16 +517,28 @@ export default function App() {
 
   const groupedTasks = () => {
     if (!tasks) return [];
-  
+
     const groups = {};
-  
+
     tasks.forEach((task) => {
       const key = task.category || "";
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     });
-  
+
     return Object.entries(groups);
+  };
+
+  const renderTaskDate = (item) => {
+    if (!item.dueDateRaw) return null;
+
+    const date = new Date(item.dueDateRaw);
+
+    if (item.hasTime === false) {
+      return formatDate(date);
+    }
+
+    return formatDateTime(date);
   };
 
   const renderTaskItem = (item) => (
@@ -425,12 +557,18 @@ export default function App() {
         </Text>
       </TouchableOpacity>
 
-      <Text style={[styles.text, item.done && styles.done, { color: textColor }]}>
-        {item.text}
-      </Text>
+      <View style={styles.taskContent}>
+        <Text style={[styles.text, item.done && styles.done, { color: textColor }]}>
+          {item.text}
+        </Text>
+      </View>
 
-      {item.dueDate && (
-        <Text style={[styles.dateText, { color: textColor }]}>{item.dueDate}</Text>
+      {item.dueDateRaw && (
+        <View style={styles.dateWrap}>
+          <Text style={[styles.dateText, { color: subTextColor }]}>
+            {renderTaskDate(item)}
+          </Text>
+        </View>
       )}
 
       <TouchableOpacity onPress={() => moveUp(item.id)}>
@@ -648,10 +786,48 @@ export default function App() {
             <TouchableOpacity onPress={() => setPriority("high")}>
               <Text style={styles.icon}>🔴</Text>
             </TouchableOpacity>
+          </View>
 
-            <TouchableOpacity onPress={() => setShowPicker(true)}>
-              <Text style={styles.icon}>📅</Text>
+          <View style={styles.dateRow}>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)}>
+              <View style={[styles.dateButton, { backgroundColor: cardBg }]}>
+                <Text style={[styles.dateButtonText, { color: textColor }]}>
+                  {dueDate ? `📅 ${formatDate(dueDate)}` : "📅 Datum"}
+                </Text>
+              </View>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                if (!dueDate) {
+                  setDueDate(getInitialDueDate());
+                }
+                setHasTime((prev) => !prev);
+              }}
+            >
+              <View style={[styles.timeButton, { backgroundColor: cardBg }]}>
+                <Text style={[styles.dateButtonText, { color: textColor }]}>
+                  {hasTime ? "⏰ Uhrzeit an" : "⏰ Uhrzeit aus"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {hasTime && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (!dueDate) {
+                    setDueDate(getInitialDueDate());
+                  }
+                  setShowTimePicker(true);
+                }}
+              >
+                <View style={[styles.timeButton, { backgroundColor: cardBg }]}>
+                  <Text style={[styles.dateButtonText, { color: textColor }]}>
+                    {dueDate ? `⏰ ${formatTime(dueDate)}` : "⏰ Uhrzeit"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
 
           {uniqueCategories.length > 0 && (
@@ -675,17 +851,36 @@ export default function App() {
         </>
       )}
 
-      {showPicker && (
+      {showDatePicker && (
         <DateTimePicker
-          value={dueDate || new Date()}
+          value={dueDate || getInitialDueDate()}
           mode="date"
+          is24Hour={true}
           onChange={(event, selectedDate) => {
-            setShowPicker(false);
-            if (selectedDate) {
-              const normalizedDate = new Date(selectedDate);
-              normalizedDate.setHours(8, 30, 0, 0);
-              setDueDate(normalizedDate);
-            }
+            setShowDatePicker(false);
+
+            if (event.type === "dismissed" || !selectedDate) return;
+
+            const currentTime = dueDate || getInitialDueDate();
+            const combinedDate = buildDateWithTime(selectedDate, currentTime);
+            setDueDate(combinedDate);
+          }}
+        />
+      )}
+
+      {showTimePicker && hasTime && (
+        <DateTimePicker
+          value={dueDate || getInitialDueDate()}
+          mode="time"
+          is24Hour={true}
+          onChange={(event, selectedTime) => {
+            setShowTimePicker(false);
+
+            if (event.type === "dismissed" || !selectedTime) return;
+
+            const currentDate = dueDate || getInitialDueDate();
+            const combinedDate = buildDateWithTime(currentDate, selectedTime);
+            setDueDate(combinedDate);
           }}
         />
       )}
@@ -856,6 +1051,30 @@ const styles = StyleSheet.create({
     marginRight: 8
   },
 
+  dateRow: {
+    flexDirection: "row",
+    paddingHorizontal: 10,
+    marginTop: 3
+  },
+
+  dateButton: {
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 8
+  },
+
+  timeButton: {
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 8
+  },
+
+  dateButtonText: {
+    fontSize: 14
+  },
+
   addBtn: {
     marginLeft: 10,
     backgroundColor: "#4d96ff",
@@ -915,15 +1134,24 @@ const styles = StyleSheet.create({
     borderLeftWidth: 6
   },
 
-  text: {
+  taskContent: {
     flex: 1,
-    marginLeft: 7,
+    marginLeft: 7
+  },
+
+  text: {
     fontSize: 15
+  },
+
+  dateWrap: {
+    alignItems: "flex-end",
+    marginLeft: 8
   },
 
   dateText: {
     fontSize: 12,
-    marginRight: 6
+    marginRight: 6,
+    textAlign: "right"
   },
 
   done: {
