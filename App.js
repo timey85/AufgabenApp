@@ -318,10 +318,6 @@ export default function App() {
       });
     }
     
-    await addLog(
-      `Reminder-Einstellungen: r1=${reminderSettings.reminder1Enabled}, tage=${reminderSettings.reminder1DaysBefore}, zeit=${reminderSettings.reminder1Time}, r2=${reminderSettings.reminder2Enabled}, stunden=${reminderSettings.reminder2HoursBefore}`,
-      true
-    );
     return reminderEntries.filter((entry) => entry.date.getTime() > Date.now());
   };
 
@@ -344,7 +340,10 @@ export default function App() {
     );
     
     if (reminderEntries.length === 0) {
-      await addLog(`Es wurden keine zukünftigen reminderEntries erzeugt für "${taskText}"`, true);
+      await addLog(
+        `Es wurden keine zukünftigen reminderEntries erzeugt für "${taskText}"`,
+        true
+      );
     } else {
       for (const entry of reminderEntries) {
         await addLog(
