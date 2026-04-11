@@ -66,14 +66,10 @@ export default function App() {
 
       const loadedSettings = await loadSettings();
       const loadedTasks = await loadTasks();
-      const syncedTasks = await syncNotificationsForVisibleTasks(
-        loadedTasks,
-        loadedSettings
-      );
-
+      
       setSettings(loadedSettings);
       setSettingsDraft(loadedSettings);
-      setTasks(syncedTasks);
+      setTasks(loadedTasks);
 
       setIsReady(true);
     };
@@ -305,11 +301,6 @@ export default function App() {
   };
 
   const syncNotificationsForVisibleTasks = async (taskList, reminderSettings) => {
-    try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-    } catch (error) {
-      console.log("Fehler beim globalen Löschen geplanter Benachrichtigungen:", error);
-    }
 
     const updatedTasks = [];
 
