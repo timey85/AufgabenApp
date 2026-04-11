@@ -27,13 +27,15 @@ Notifications.setNotificationHandler({
 
 const TASKS_KEY = "TASKS";
 const SETTINGS_KEY = "REMINDER_SETTINGS";
+const LOGS_KEY = "DEBUG_LOGS";
 
 const defaultSettings = {
   reminder1Enabled: true,
   reminder1DaysBefore: 1,
   reminder1Time: "08:30",
   reminder2Enabled: true,
-  reminder2HoursBefore: 2
+  reminder2HoursBefore: 2,
+  debugLoggingEnabled: false
 };
 
 export default function App() {
@@ -51,6 +53,9 @@ export default function App() {
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const [logs, setLogs] = useState([]);
+  const [logsOpen, setLogsOpen] = useState(false);
+
   const [text, setText] = useState("");
   const [priority, setPriority] = useState("normal");
   const [category, setCategory] = useState("");
@@ -60,18 +65,78 @@ export default function App() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
+  const nowStamp = () => {
+    const now = new Date();
+    const date = now.toLocaleDateString("de-DE");
+    const time = now.toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+    return `${date} ${time}`;
+  };
+
+  const loadLogs = async () => {
+    try {
+      const data = await AsyncStorage.getItem(LOGS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.log("Fehler beim Laden der Logs:", error);
+      return [];
+    }
+  };
+
+  const saveLogs = async (nextLogs) => {
+    try {
+      await AsyncStorage.setItem(LOGS_KEY, JSON.stringify(nextLogs));
+    } catch (error) {
+      console.log("Fehler beim Speichern der Logs:", error);
+    }
+  };
+
+  const addLog = async (message, force = false) => {
+    const enabled = force || settings.debugLoggingEnabled || settingsDraft.debugLoggingEnabled;
+
+    if (!enabled) return;
+
+    const entry = `[${nowStamp()}] ${message}`;
+    console.log(entry);
+
+    const nextLogs = [entry, ...logs].slice(0, 200);
+    setLogs(nextLogs);
+    await saveLogs(nextLogs);
+  };
+
+  const clearLogs = async () => {
+    setLogs([]);
+    try {
+      await AsyncStorage.removeItem(LOGS_KEY);
+    } catch (error) {
+      console.log("Fehler beim Löschen der Logs:", error);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
+      const loadedLogs = await loadLogs();
+      setLogs(loadedLogs);
+
       await setupNotifications();
 
       const loadedSettings = await loadSettings();
       const loadedTasks = await loadTasks();
-      
+
       setSettings(loadedSettings);
       setSettingsDraft(loadedSettings);
       setTasks(loadedTasks);
 
       setIsReady(true);
+
+      if (loadedSettings.debugLoggingEnabled) {
+        const initLogs = [`[${nowStamp()}] App gestartet`, ...loadedLogs].slice(0, 200);
+        setLogs(initLogs);
+        await saveLogs(initLogs);
+      }
     };
 
     init();
@@ -110,7 +175,9 @@ export default function App() {
   const loadTasks = async () => {
     try {
       const data = await AsyncStorage.getItem(TASKS_KEY);
-      return data ? JSON.parse(data) : [];
+      const loaded = data ? JSON.parse(data) : [];
+      await addLog(`Aufgaben geladen: ${loaded.length}`, true);
+      return loaded;
     } catch (error) {
       console.log("Fehler beim Laden der Aufgaben:", error);
       return [];
@@ -120,6 +187,7 @@ export default function App() {
   const saveTasks = async () => {
     try {
       await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+      await addLog(`Aufgaben gespeichert: ${tasks.length}`);
     } catch (error) {
       console.log("Fehler beim Speichern der Aufgaben:", error);
     }
@@ -266,6 +334,10 @@ export default function App() {
     );
     const notificationIds = [];
 
+    await addLog(
+      `Plane Benachrichtigungen für "${taskText}" (${itemHasTime ? "mit Uhrzeit" : "ohne Uhrzeit"})`
+    );
+
     for (const entry of reminderEntries) {
       try {
         const id = await Notifications.scheduleNotificationAsync({
@@ -282,9 +354,17 @@ export default function App() {
         });
 
         notificationIds.push(id);
+        await addLog(
+          `Geplant: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`
+        );
       } catch (error) {
         console.log("Fehler beim Planen einer Benachrichtigung:", error);
+        await addLog(`Fehler beim Planen für "${taskText}"`);
       }
+    }
+
+    if (reminderEntries.length === 0) {
+      await addLog(`Keine zukünftigen Erinnerungen für "${taskText}" planbar`);
     }
 
     return notificationIds;
@@ -294,35 +374,11 @@ export default function App() {
     for (const id of notificationIds) {
       try {
         await Notifications.cancelScheduledNotificationAsync(id);
+        await addLog(`Benachrichtigung gelöscht: ${id}`);
       } catch (error) {
         console.log("Fehler beim Löschen einer Benachrichtigung:", error);
       }
     }
-  };
-
-  const syncNotificationsForVisibleTasks = async (taskList, reminderSettings) => {
-
-    const updatedTasks = [];
-
-    for (const task of taskList) {
-      let newNotificationIds = [];
-
-      if (!task.done && task.dueDateRaw) {
-        newNotificationIds = await scheduleNotificationsForTask(
-          task.text,
-          new Date(task.dueDateRaw),
-          reminderSettings,
-          task.hasTime !== false
-        );
-      }
-
-      updatedTasks.push({
-        ...task,
-        notificationIds: newNotificationIds
-      });
-    }
-
-    return updatedTasks;
   };
 
   const addTask = async () => {
@@ -360,6 +416,10 @@ export default function App() {
     };
 
     setTasks((prev) => [...prev, newTask]);
+
+    await addLog(
+      `Aufgabe erstellt: "${newTask.text}"${dueDate ? `, fällig ${hasTime ? formatDateTime(dueDate) : formatDate(dueDate)}` : ""}`
+    );
 
     setText("");
     setCategory("");
@@ -402,6 +462,10 @@ export default function App() {
           : t
       )
     );
+
+    await addLog(
+      `Aufgabe ${newDoneValue ? "erledigt" : "reaktiviert"}: "${currentTask.text}"`
+    );
   };
 
   const deleteTask = async (id) => {
@@ -414,9 +478,13 @@ export default function App() {
     }
 
     setTasks((prev) => prev.filter((t) => t.id !== id));
+
+    if (taskToDelete) {
+      await addLog(`Aufgabe gelöscht: "${taskToDelete.text}"`);
+    }
   };
 
-  const moveUp = (id) => {
+  const moveUp = async (id) => {
     if (!tasks) return;
 
     const index = tasks.findIndex((t) => t.id === id);
@@ -425,6 +493,8 @@ export default function App() {
     const newTasks = [...tasks];
     [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
     setTasks(newTasks);
+
+    await addLog(`Aufgabe nach oben verschoben: ${id}`);
   };
 
   const rescheduleAllTasks = async (newSettings) => {
@@ -455,6 +525,7 @@ export default function App() {
     }
 
     setTasks(updatedTasks);
+    await addLog("Alle Aufgaben neu terminiert");
   };
 
   const saveReminderSettings = async () => {
@@ -488,6 +559,7 @@ export default function App() {
     await rescheduleAllTasks(normalizedSettings);
     setSettingsOpen(false);
 
+    await addLog("Einstellungen gespeichert", true);
     Alert.alert("Gespeichert", "Die Erinnerungen wurden für alle Aufgaben aktualisiert.");
   };
 
@@ -556,7 +628,7 @@ export default function App() {
 
       {item.dueDateRaw && (
         <View style={styles.dateWrap}>
-          <Text style={[styles.dateText, { color: subTextColor }]}>
+          <Text style={[styles.taskMeta, { color: subTextColor }]}>
             {renderTaskDate(item)}
           </Text>
         </View>
@@ -710,6 +782,57 @@ export default function App() {
                 }
               ]}
             />
+          </View>
+
+          <View style={styles.settingBlock}>
+            <View style={styles.settingHeaderRow}>
+              <Text style={[styles.settingLabel, { color: textColor }]}>
+                Debug-Logging aktiv
+              </Text>
+              <Switch
+                value={settingsDraft.debugLoggingEnabled}
+                onValueChange={(value) =>
+                  setSettingsDraft((prev) => ({
+                    ...prev,
+                    debugLoggingEnabled: value
+                  }))
+                }
+              />
+            </View>
+
+            <View style={styles.logButtonsRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setLogsOpen((prev) => !prev)}
+              >
+                <Text style={styles.secondaryBtnText}>
+                  {logsOpen ? "Logs ausblenden" : "Logs anzeigen"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={clearLogs}
+              >
+                <Text style={styles.secondaryBtnText}>Logs löschen</Text>
+              </TouchableOpacity>
+            </View>
+
+            {logsOpen && (
+              <View style={[styles.logBox, { backgroundColor: bg, borderColor: inputBorder }]}>
+                <ScrollView style={styles.logScroll}>
+                  {logs.length === 0 ? (
+                    <Text style={{ color: subTextColor }}>Keine Logs vorhanden</Text>
+                  ) : (
+                    logs.map((entry, index) => (
+                      <Text key={`${entry}-${index}`} style={[styles.logText, { color: textColor }]}>
+                        {entry}
+                      </Text>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           <View style={styles.settingsActions}>
@@ -990,6 +1113,7 @@ const styles = StyleSheet.create({
 
   secondaryBtn: {
     borderWidth: 1,
+    borderColor: "#4d96ff",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -997,7 +1121,8 @@ const styles = StyleSheet.create({
   },
 
   secondaryBtnText: {
-    fontWeight: "600"
+    fontWeight: "600",
+    color: "#4d96ff"
   },
 
   primaryBtn: {
@@ -1010,6 +1135,28 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     color: "white",
     fontWeight: "600"
+  },
+
+  logButtonsRow: {
+    flexDirection: "row",
+    marginTop: 8
+  },
+
+  logBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    marginTop: 10,
+    padding: 8,
+    maxHeight: 220
+  },
+
+  logScroll: {
+    maxHeight: 200
+  },
+
+  logText: {
+    fontSize: 12,
+    marginBottom: 6
   },
 
   inputRow: {
@@ -1139,7 +1286,7 @@ const styles = StyleSheet.create({
     marginLeft: 8
   },
 
-  dateText: {
+  taskMeta: {
     fontSize: 12,
     marginRight: 6,
     textAlign: "right"
