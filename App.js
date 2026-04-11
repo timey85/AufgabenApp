@@ -340,17 +340,17 @@ export default function App() {
 
     for (const entry of reminderEntries) {
       try {
+        await addLog(
+          `Versuche zu planen: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`,
+          true
+        );
         const id = await Notifications.scheduleNotificationAsync({
           content: {
             title: entry.title,
             body: taskText,
             sound: true
           },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: entry.date,
-            channelId: "default"
-          }
+          trigger: entry.date
         });
 
         notificationIds.push(id);
@@ -358,8 +358,13 @@ export default function App() {
           `Geplant: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`
         );
       } catch (error) {
+        const errorMessage =
+          error?.message ||
+          error?.toString?.() ||
+          JSON.stringify(error);
+      
         console.log("Fehler beim Planen einer Benachrichtigung:", error);
-        await addLog(`Fehler beim Planen für "${taskText}"`);
+        await addLog(`Fehler beim Planen für "${taskText}": ${errorMessage}`, true);
       }
     }
 
