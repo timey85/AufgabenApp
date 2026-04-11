@@ -317,7 +317,11 @@ export default function App() {
         title: getReminder2Title(hoursBefore)
       });
     }
-
+    
+    await addLog(
+      `Reminder-Einstellungen: r1=${reminderSettings.reminder1Enabled}, tage=${reminderSettings.reminder1DaysBefore}, zeit=${reminderSettings.reminder1Time}, r2=${reminderSettings.reminder2Enabled}, stunden=${reminderSettings.reminder2HoursBefore}`,
+      true
+    );
     return reminderEntries.filter((entry) => entry.date.getTime() > Date.now());
   };
 
@@ -335,7 +339,24 @@ export default function App() {
     const notificationIds = [];
 
     await addLog(
-      `Plane Benachrichtigungen für "${taskText}" (${itemHasTime ? "mit Uhrzeit" : "ohne Uhrzeit"})`
+      `Reminder-Einstellungen für "${taskText}": r1=${reminderSettings.reminder1Enabled}, tage=${reminderSettings.reminder1DaysBefore}, zeit=${reminderSettings.reminder1Time}, r2=${reminderSettings.reminder2Enabled}, stunden=${reminderSettings.reminder2HoursBefore}, hasTime=${itemHasTime}`,
+      true
+    );
+    
+    if (reminderEntries.length === 0) {
+      await addLog(`Es wurden keine zukünftigen reminderEntries erzeugt für "${taskText}"`, true);
+    } else {
+      for (const entry of reminderEntries) {
+        await addLog(
+          `ReminderEntry erzeugt: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`,
+          true
+        );
+      }
+    }
+
+    await addLog(
+      `Plane Benachrichtigungen für "${taskText}" (${itemHasTime ? "mit Uhrzeit" : "ohne Uhrzeit"})`,
+      true
     );
 
     for (const entry of reminderEntries) {
@@ -825,7 +846,11 @@ export default function App() {
 
             {logsOpen && (
               <View style={[styles.logBox, { backgroundColor: bg, borderColor: inputBorder }]}>
-                <ScrollView style={styles.logScroll}>
+                <ScrollView
+                  style={styles.logScroll}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
                   {logs.length === 0 ? (
                     <Text style={{ color: subTextColor }}>Keine Logs vorhanden</Text>
                   ) : (
