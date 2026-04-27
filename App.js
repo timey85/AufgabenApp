@@ -126,9 +126,14 @@ export default function App() {
       const loadedSettings = await loadSettings();
       const loadedTasks = await loadTasks();
 
+      const restoredTasks = await restoreScheduledNotifications(
+        loadedTasks,
+        loadedSettings
+      );
+
       setSettings(loadedSettings);
       setSettingsDraft(loadedSettings);
-      setTasks(loadedTasks);
+      setTasks(restoredTasks);
 
       setIsReady(true);
 
@@ -321,6 +326,36 @@ export default function App() {
     return reminderEntries.filter((entry) => entry.date.getTime() > Date.now());
   };
 
+  const restoreScheduledNotifications = async (taskList, reminderSettings) => {
+    const updatedTasks = [];
+  
+    await addLog("Stelle geplante Benachrichtigungen wieder her", true);
+  
+    for (const task of taskList) {
+      if (task.notificationIds?.length) {
+        await cancelTaskNotifications(task.notificationIds);
+      }
+  
+      let newNotificationIds = [];
+  
+      if (!task.done && task.dueDateRaw) {
+        newNotificationIds = await scheduleNotificationsForTask(
+          task.text,
+          new Date(task.dueDateRaw),
+          reminderSettings,
+          task.hasTime !== false
+        );
+      }
+  
+      updatedTasks.push({
+        ...task,
+        notificationIds: newNotificationIds
+      });
+    }
+  
+    return updatedTasks;
+  };
+  
   const scheduleNotificationsForTask = async (
     taskText,
     selectedDate,
@@ -375,7 +410,8 @@ export default function App() {
 
         notificationIds.push(id);
         await addLog(
-          `Geplant: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`
+          `Geplant: "${entry.title}" für "${taskText}" am ${formatDateTime(entry.date)}`,
+          true
         );
       } catch (error) {
         const errorMessage =
