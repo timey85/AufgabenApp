@@ -547,15 +547,36 @@ export default function App() {
 
   const moveUp = async (id) => {
     if (!tasks) return;
-
-    const index = tasks.findIndex((t) => t.id === id);
-    if (index <= 0) return;
-
+  
+    const currentIndex = tasks.findIndex((t) => t.id === id);
+    if (currentIndex <= 0) return;
+  
+    const currentTask = tasks[currentIndex];
+    const currentCategory = currentTask.category || "";
+  
+    let previousSameCategoryIndex = -1;
+  
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const taskCategory = tasks[i].category || "";
+  
+      if (taskCategory === currentCategory) {
+        previousSameCategoryIndex = i;
+        break;
+      }
+    }
+  
+    if (previousSameCategoryIndex === -1) return;
+  
     const newTasks = [...tasks];
-    [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+  
+    [newTasks[previousSameCategoryIndex], newTasks[currentIndex]] = [
+      newTasks[currentIndex],
+      newTasks[previousSameCategoryIndex]
+    ];
+  
     setTasks(newTasks);
-
-    await addLog(`Aufgabe nach oben verschoben: ${id}`);
+  
+    await addLog(`Aufgabe innerhalb der Kategorie nach oben verschoben: ${id}`);
   };
 
   const rescheduleAllTasks = async (newSettings) => {
